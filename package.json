@@ -1,6 +1,14 @@
 {
+  "scripts": {
+    "start": "bun run --minify --production index.ts",
+    "benchmark": "bun run benchmark.ts"
+  },
   "dependencies": {
     "@kilocode/plugin": "7.0.46",
     "obs-websocket-js": "^5.0.7"
+  },
+  "devDependencies": {
+    "@types/bun": "^1.3.10",
+    "@types/node": "^25.5.0"
   }
 }

@@ -129,14 +129,24 @@ serve({
                 // We fire to OBS instantly based on our known state without waiting for phone ack
                 if (!data.connected) return;
 
+                const start = Bun.nanoseconds();
                 try {
+                    let promise;
                     if (data.recording) {
-                        data.obs.call("StopRecord");
+                        promise = data.obs.call("StopRecord");
                     } else {
-                        data.obs.call("StartRecord");
+                        promise = data.obs.call("StartRecord");
                     }
                     // Optimistic state flip locally until OBS event confirms
-                    data.recording = !data.recording; 
+                    data.recording = !data.recording;
+
+                    promise.then(() => {
+                        const end = Bun.nanoseconds();
+                        const timeMs = (end - start) / 1_000_000;
+                        console.log(`Bun processing time (forwardToOBS): ${timeMs.toFixed(3)}ms`);
+                        ws.send(JSON.stringify({ type: "benchmark_result", timeMs }));
+                    }).catch((err) => console.error("OBS toggle command failed:", err));
+
                 } catch (err) {
                     console.error("Failed to toggle:", err);
                 }

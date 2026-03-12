@@ -204,6 +204,8 @@
     <div id="connectionStatus">Disconnected</div>
     <button id="qrBtn">Share QR</button>
     <button id="clearSettingsBtn">Clear Config</button>
+    <button id="benchmarkToggleBtn" style="position: absolute; top: 10px; right: 110px; background: rgba(255,165,0,0.5); border: none; color: white; padding: 5px 10px; border-radius: 4px; font-size: 12px; z-index: 10; display: none;">Lat. Test</button>
+
 
     <div id="qrModal" class="hidden">
         <img id="qrImage" src="" alt="QR Code" />
@@ -230,10 +232,13 @@
         const triggerBtn = document.getElementById('triggerBtn');
         const btnText = document.getElementById('btnText');
         const connectionStatus = document.getElementById('connectionStatus');
+        const benchmarkBtn = document.getElementById('benchmarkToggleBtn');
         
         let ws = null;
         let isRecording = false;
         let isConnected = false;
+        let t0 = 0; // Benchmark start time
+        let benchmarking = false;
 
         // Parse URL params for easy sharing setup
         const urlParams = new URLSearchParams(window.location.search);
@@ -249,7 +254,22 @@
         const isTouchDevice = ('ontouchstart' in window) || (navigator.maxTouchPoints > 0);
         if (!isTouchDevice) {
             document.getElementById('qrBtn').style.display = 'block';
+            // Also shift the clear button to the left slightly and show benchmark btn next to it
+            document.getElementById('qrBtn').style.right = '110px';
+            benchmarkBtn.style.right = '200px';
+            benchmarkBtn.style.display = 'block';
+        } else {
+            benchmarkBtn.style.display = 'block';
         }
+
+        // Benchmark Mode Toggle
+        benchmarkBtn.addEventListener('click', () => {
+            benchmarking = !benchmarking;
+            benchmarkBtn.style.background = benchmarking ? 'rgba(40,167,69,0.5)' : 'rgba(255,165,0,0.5)';
+            if (benchmarking) {
+                alert("Benchmark Mode ON.\nTap the giant button to test Latency! Check Developer Console for results or wait for visual feedback.");
+            }
+        });
 
         // Generate QR code logic
         document.getElementById('qrBtn').addEventListener('click', async () => {
@@ -370,6 +390,11 @@
                     if (msg.droppedFrames !== undefined) {
                         document.getElementById('valDropped').innerText = msg.droppedFrames;
                     }
+                } else if (msg.type === 'benchmark_result') {
+                    if (benchmarking && t0 > 0) {
+                        const t1 = performance.now();
+                        console.log(`Command Acknowledged by Bun Server in: ${(t1 - t0).toFixed(3)}ms (Bun Internal processing: ${msg.timeMs.toFixed(3)}ms)`);
+                    }
                 } else if (msg.type === 'error') {
                     connectionStatus.innerText = 'Error: ' + msg.message;
                     setButtonState('offline');
@@ -417,6 +442,7 @@
             }
 
             // Fire command to backend instantly
+            if (benchmarking) t0 = performance.now();
             ws.send(JSON.stringify({ action: 'toggle' }));
         }, { passive: false });
 
@@ -426,6 +452,8 @@
             e.preventDefault();
             if (!isConnected || !ws) return;
 
+            if (benchmarking) t0 = performance.now();
+            
             if (isRecording) {
                 setButtonState('ready');
             } else {

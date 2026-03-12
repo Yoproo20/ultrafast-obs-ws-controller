@@ -24,6 +24,5 @@ ENV PORT=44253
 # Expose the configured port
 EXPOSE 44253
 
-# Run the application
-# We use node-caged's recommended practice, though we invoke bun
-CMD ["bun", "run", "index.ts"]
+# Run the application using the optimized production command
+CMD ["bun", "run", "start"]
