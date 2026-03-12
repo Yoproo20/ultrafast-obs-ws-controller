@@ -1,0 +1,447 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>OBS Instant-Trigger</title>
+    <style>
+        * {
+            box-sizing: border-box;
+            user-select: none;
+            -webkit-user-select: none;
+            -webkit-touch-callout: none;
+        }
+
+        body, html {
+            margin: 0;
+            padding: 0;
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            background-color: #000;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+        }
+
+        /* Settings Overlay */
+        #settings {
+            position: fixed;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background: #222;
+            color: white;
+            z-index: 100;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            padding: 20px;
+        }
+        #settings.hidden {
+            display: none;
+        }
+        .form-group {
+            margin-bottom: 15px;
+            width: 100%;
+            max-width: 300px;
+        }
+        .form-group label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: bold;
+        }
+        .form-group input {
+            width: 100%;
+            padding: 12px;
+            font-size: 16px;
+            border: none;
+            border-radius: 4px;
+        }
+        #saveBtn {
+            padding: 15px;
+            width: 100%;
+            max-width: 300px;
+            background: #007bff;
+            color: white;
+            border: none;
+            font-size: 18px;
+            font-weight: bold;
+            border-radius: 4px;
+            margin-top: 10px;
+        }
+
+        /* Main Button */
+        #triggerBtn {
+            position: absolute;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background-color: #333; /* Default offline */
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            color: white;
+            font-size: 40px;
+            font-weight: bold;
+            text-transform: uppercase;
+            transition: none; /* STRICT NO TRANSITIONS */
+        }
+        
+        #triggerBtn.ready {
+            background-color: #28a745; /* Green */
+        }
+        
+        #triggerBtn.recording {
+            background-color: #dc3545; /* Red */
+        }
+
+        /* Status Log */
+        #statusLog {
+            position: absolute;
+            bottom: 20px;
+            left: 20px;
+            right: 20px;
+            background: rgba(0, 0, 0, 0.7);
+            color: #ccc;
+            padding: 15px;
+            border-radius: 8px;
+            font-size: 14px;
+            display: flex;
+            justify-content: space-between;
+            pointer-events: none; /* Ignore taps */
+        }
+        .stat-item {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+        .stat-value {
+            font-size: 20px;
+            font-weight: bold;
+            color: white;
+        }
+        
+        #connectionStatus {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            color: #aaa;
+            font-size: 12px;
+            z-index: 10;
+        }
+        
+        #clearSettingsBtn {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            background: rgba(255,255,255,0.2);
+            border: none;
+            color: white;
+            padding: 5px 10px;
+            border-radius: 4px;
+            font-size: 12px;
+            z-index: 10;
+        }
+
+        #qrBtn {
+            position: absolute;
+            top: 10px;
+            right: 110px;
+            background: rgba(0, 123, 255, 0.5);
+            border: none;
+            color: white;
+            padding: 5px 10px;
+            border-radius: 4px;
+            font-size: 12px;
+            z-index: 10;
+            display: none; /* hidden by default */
+        }
+
+        #qrModal {
+            position: fixed;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background: rgba(0, 0, 0, 0.9);
+            z-index: 200;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+        }
+        #qrModal.hidden {
+            display: none;
+        }
+        #qrModal img {
+            background: white;
+            padding: 10px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+        }
+        #closeQrBtn {
+            padding: 10px 20px;
+            background: #dc3545;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            font-weight: bold;
+        }
+    </style>
+</head>
+<body>
+
+    <div id="settings">
+        <h2>OBS Connection</h2>
+        <div class="form-group">
+            <label>IP Address</label>
+            <input type="text" id="ipInput" placeholder="192.168.1.100" />
+        </div>
+        <div class="form-group">
+            <label>Port</label>
+            <input type="number" id="portInput" placeholder="4455" value="4455" />
+        </div>
+        <div class="form-group">
+            <label>Password</label>
+            <input type="password" id="passInput" placeholder="Leave blank if none" />
+        </div>
+        <button id="saveBtn">Connect</button>
+    </div>
+
+    <div id="connectionStatus">Disconnected</div>
+    <button id="qrBtn">Share QR</button>
+    <button id="clearSettingsBtn">Clear Config</button>
+
+    <div id="qrModal" class="hidden">
+        <img id="qrImage" src="" alt="QR Code" />
+        <button id="closeQrBtn">Close</button>
+    </div>
+
+    <div id="triggerBtn">
+        <span id="btnText">CONNECTING</span>
+    </div>
+
+    <div id="statusLog">
+        <div class="stat-item">
+            <span class="stat-value" id="valDisk">-- GB</span>
+            <span>Disk Space</span>
+        </div>
+        <div class="stat-item">
+            <span class="stat-value" id="valDropped">0</span>
+            <span>Dropped</span>
+        </div>
+    </div>
+
+    <script>
+        const settingsEl = document.getElementById('settings');
+        const triggerBtn = document.getElementById('triggerBtn');
+        const btnText = document.getElementById('btnText');
+        const connectionStatus = document.getElementById('connectionStatus');
+        
+        let ws = null;
+        let isRecording = false;
+        let isConnected = false;
+
+        // Parse URL params for easy sharing setup
+        const urlParams = new URLSearchParams(window.location.search);
+        if (urlParams.has('ip')) {
+            localStorage.setItem('obs_ip', urlParams.get('ip'));
+            localStorage.setItem('obs_port', urlParams.get('port') || '4455');
+            localStorage.setItem('obs_pass', urlParams.get('pass') || '');
+            // Clean up URL
+            window.history.replaceState({}, document.title, window.location.pathname);
+        }
+
+        // Show QR Button if on PC (simple check: ontouchstart not in window)
+        const isTouchDevice = ('ontouchstart' in window) || (navigator.maxTouchPoints > 0);
+        if (!isTouchDevice) {
+            document.getElementById('qrBtn').style.display = 'block';
+        }
+
+        // Generate QR code logic
+        document.getElementById('qrBtn').addEventListener('click', async () => {
+            const creds = getCreds();
+            if (!creds) {
+                alert("Please connect to OBS first to generate a sharing QR code.");
+                return;
+            }
+            try {
+                const res = await fetch('/api/ip');
+                const data = await res.json();
+                
+                let shareUrl = `${location.protocol}//${data.ip}:${location.port}/?ip=${encodeURIComponent(creds.ip)}`;
+                if (creds.port && creds.port !== '4455') {
+                    shareUrl += `&port=${encodeURIComponent(creds.port)}`;
+                }
+                if (creds.pass) {
+                    shareUrl += `&pass=${encodeURIComponent(creds.pass)}`;
+                }
+
+                // Using qrserver API to generate the QR code
+                const qrSrc = `https://api.qrserver.com/v1/create-qr-code/?size=250x250&data=${encodeURIComponent(shareUrl)}`;
+                document.getElementById('qrImage').src = qrSrc;
+                document.getElementById('qrModal').classList.remove('hidden');
+            } catch (err) {
+                console.error('Failed to get IP', err);
+                alert("Could not generate QR code.");
+            }
+        });
+
+        document.getElementById('closeQrBtn').addEventListener('click', () => {
+            document.getElementById('qrModal').classList.add('hidden');
+        });
+
+        // Load credentials
+        function getCreds() {
+            const ip = localStorage.getItem('obs_ip');
+            const port = localStorage.getItem('obs_port');
+            const pass = localStorage.getItem('obs_pass');
+            if (ip && port) return { ip, port, pass: pass || '' };
+            return null;
+        }
+
+        function saveCreds(ip, port, pass) {
+            localStorage.setItem('obs_ip', ip);
+            localStorage.setItem('obs_port', port);
+            localStorage.setItem('obs_pass', pass);
+        }
+
+        function clearCreds() {
+            localStorage.removeItem('obs_ip');
+            localStorage.removeItem('obs_port');
+            localStorage.removeItem('obs_pass');
+            location.reload();
+        }
+        document.getElementById('clearSettingsBtn').addEventListener('click', clearCreds);
+
+        // UI Updates
+        function setButtonState(state) {
+            triggerBtn.className = '';
+            if (state === 'offline') {
+                triggerBtn.classList.add('offline');
+                btnText.innerText = 'OFFLINE';
+            } else if (state === 'ready') {
+                triggerBtn.classList.add('ready');
+                btnText.innerText = 'READY';
+                isRecording = false;
+            } else if (state === 'recording') {
+                triggerBtn.classList.add('recording');
+                btnText.innerText = 'RECORDING';
+                isRecording = true;
+            }
+        }
+
+        // Connection logic
+        function connect() {
+            const creds = getCreds();
+            if (!creds) {
+                settingsEl.classList.remove('hidden');
+                return;
+            }
+            settingsEl.classList.add('hidden');
+            connectionStatus.innerText = 'Connecting to Relay...';
+
+            const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
+            const wsUrl = `${protocol}//${location.host}/ws`;
+            ws = new WebSocket(wsUrl);
+
+            ws.onopen = () => {
+                connectionStatus.innerText = 'Authenticating with OBS...';
+                // Send credentials to backend to connect to OBS
+                ws.send(JSON.stringify({
+                    action: 'connect',
+                    ...creds
+                }));
+            };
+
+            ws.onmessage = (e) => {
+                const msg = JSON.parse(e.data);
+                if (msg.type === 'status') {
+                    if (msg.connected) {
+                        isConnected = true;
+                        connectionStatus.innerText = 'Connected';
+                        if (msg.recording) {
+                            setButtonState('recording');
+                        } else {
+                            setButtonState('ready');
+                        }
+                    } else {
+                        isConnected = false;
+                        connectionStatus.innerText = 'OBS Disconnected';
+                        setButtonState('offline');
+                    }
+                } else if (msg.type === 'stats') {
+                    if (msg.diskSpace !== undefined) {
+                        document.getElementById('valDisk').innerText = msg.diskSpace.toFixed(1) + ' GB';
+                    }
+                    if (msg.droppedFrames !== undefined) {
+                        document.getElementById('valDropped').innerText = msg.droppedFrames;
+                    }
+                } else if (msg.type === 'error') {
+                    connectionStatus.innerText = 'Error: ' + msg.message;
+                    setButtonState('offline');
+                    if (msg.message.includes('Authentication Failed')) {
+                        clearCreds();
+                    }
+                }
+            };
+
+            ws.onclose = () => {
+                isConnected = false;
+                connectionStatus.innerText = 'Relay Disconnected';
+                setButtonState('offline');
+                ws = null;
+                // Silent Reconnect every 500ms
+                setTimeout(connect, 500);
+            };
+
+            ws.onerror = () => {
+                if (ws) ws.close();
+            };
+        }
+
+        // Settings Save
+        document.getElementById('saveBtn').addEventListener('click', () => {
+            const ip = document.getElementById('ipInput').value.trim();
+            const port = document.getElementById('portInput').value.trim();
+            const pass = document.getElementById('passInput').value;
+            if (ip && port) {
+                saveCreds(ip, port, pass);
+                connect();
+            }
+        });
+
+        // The "Instant" Trigger
+        triggerBtn.addEventListener('touchstart', (e) => {
+            e.preventDefault(); // Prevent 300ms delay & default behaviors
+            if (!isConnected || !ws) return;
+
+            // Optimistic UI Update
+            if (isRecording) {
+                setButtonState('ready'); // Instantly turn green
+            } else {
+                setButtonState('recording'); // Instantly turn red
+            }
+
+            // Fire command to backend instantly
+            ws.send(JSON.stringify({ action: 'toggle' }));
+        }, { passive: false });
+
+        // Fallback for desktop testing (mousedown instead of click for speed)
+        triggerBtn.addEventListener('mousedown', (e) => {
+            if (e.pointerType === 'touch') return; // Handled by touchstart
+            e.preventDefault();
+            if (!isConnected || !ws) return;
+
+            if (isRecording) {
+                setButtonState('ready');
+            } else {
+                setButtonState('recording');
+            }
+            ws.send(JSON.stringify({ action: 'toggle' }));
+        });
+
+        // Start connection loop
+        const saved = getCreds();
+        if (saved) {
+            document.getElementById('ipInput').value = saved.ip;
+            document.getElementById('portInput').value = saved.port;
+            document.getElementById('passInput').value = saved.pass;
+        }
+        connect();
+    </script>
+</body>
+</html>

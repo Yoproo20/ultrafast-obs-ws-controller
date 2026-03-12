@@ -1,0 +1,6 @@
+{
+  "dependencies": {
+    "@kilocode/plugin": "7.0.46",
+    "obs-websocket-js": "^5.0.7"
+  }
+}

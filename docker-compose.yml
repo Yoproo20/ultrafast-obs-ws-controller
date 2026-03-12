@@ -1,0 +1,8 @@
+services:
+  obs-controller:
+    build: .
+    container_name: obs-instant-trigger
+    restart: unless-stopped
+    network_mode: host
+    environment:
+      - PORT=44253
