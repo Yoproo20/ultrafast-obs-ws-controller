@@ -150,6 +150,36 @@ serve({
                 } catch (err) {
                     console.error("Failed to toggle:", err);
                 }
+            } else if (payload.action === "benchmark") {
+                if (!data.connected) return;
+                const iterations = payload.iterations || 100;
+
+                let totalTime = 0;
+                let minTime = Infinity;
+                let maxTime = 0;
+
+                try {
+                    for (let i = 0; i < iterations; i++) {
+                        const start = Bun.nanoseconds();
+                        await data.obs.call("GetRecordStatus");
+                        const end = Bun.nanoseconds();
+                        const elapsedMs = (end - start) / 1_000_000;
+                        totalTime += elapsedMs;
+                        if (elapsedMs < minTime) minTime = elapsedMs;
+                        if (elapsedMs > maxTime) maxTime = elapsedMs;
+                        ws.send(JSON.stringify({ type: "benchmark_progress", current: i + 1, total: iterations }));
+                    }
+                    ws.send(JSON.stringify({
+                        type: "benchmark_result_full",
+                        iterations,
+                        avgMs: totalTime / iterations,
+                        minMs: minTime,
+                        maxMs: maxTime,
+                        totalMs: totalTime
+                    }));
+                } catch (err: any) {
+                    ws.send(JSON.stringify({ type: "benchmark_error", message: err.message }));
+                }
             }
         },
         close(ws) {
