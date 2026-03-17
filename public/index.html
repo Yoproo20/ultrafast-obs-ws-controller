@@ -169,6 +169,10 @@
             display: none;
         }
 
+        #navReplayBtn {
+            background: rgba(0, 123, 255, 0.7);
+        }
+
         #qrModal {
             position: fixed;
             top: 0; left: 0; right: 0; bottom: 0;
@@ -196,6 +200,7 @@
             border-radius: 4px;
             font-weight: bold;
         }
+        
 
         #benchmarkModal {
             position: fixed;
@@ -308,6 +313,7 @@
 
     <div id="connectionStatus">Disconnected</div>
     <div id="topRightControls">
+        <button id="navReplayBtn">Replay</button>
         <button id="benchmarkBtn">Benchmark</button>
         <button id="benchmarkToggleBtn">Lat. Test</button>
         <button id="qrBtn">Share QR</button>
@@ -398,6 +404,11 @@
         }
         benchmarkBtn.style.display = 'block';
         document.getElementById('benchmarkBtn').style.display = 'block';
+
+        // Navigation
+        document.getElementById('navReplayBtn').addEventListener('click', () => {
+            window.location.href = '/replay';
+        });
 
         // Benchmark Modal
         const benchmarkModal = document.getElementById('benchmarkModal');

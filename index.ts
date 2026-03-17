@@ -26,6 +26,7 @@ type ClientData = {
     obs: OBSWebSocket;
     connected: boolean;
     recording: boolean;
+    replayBufferActive: boolean;
     statsInterval?: ReturnType<typeof setInterval>;
 };
 
@@ -41,6 +42,7 @@ serve({
                     obs: new OBSWebSocket(),
                     connected: false,
                     recording: false,
+                    replayBufferActive: false,
                 }
             });
             if (!upgraded) {
@@ -56,7 +58,10 @@ serve({
         }
 
         // Serve Static Files
-        let reqPath = url.pathname === "/" ? "/index.html" : url.pathname;
+        let reqPath =
+            url.pathname === "/" ? "/index.html"
+            : url.pathname === "/replay" ? "/replay.html"
+            : url.pathname;
         let filePath = join(import.meta.dir, "public", reqPath);
         
         if (existsSync(filePath)) {
@@ -88,10 +93,19 @@ serve({
                     const status = await data.obs.call("GetRecordStatus");
                     data.recording = status.outputActive;
 
+                    // Get initial replay buffer status (if supported)
+                    try {
+                        const replayStatus = await data.obs.call("GetReplayBufferStatus");
+                        data.replayBufferActive = replayStatus.outputActive;
+                    } catch {
+                        data.replayBufferActive = false;
+                    }
+
                     ws.send(JSON.stringify({
                         type: "status",
                         connected: true,
-                        recording: data.recording
+                        recording: data.recording,
+                        replayBufferActive: data.replayBufferActive,
                     }));
 
                     // Listen for OBS events
@@ -100,7 +114,18 @@ serve({
                         ws.send(JSON.stringify({
                             type: "status",
                             connected: true,
-                            recording: data.recording
+                            recording: data.recording,
+                            replayBufferActive: data.replayBufferActive,
+                        }));
+                    });
+
+                    data.obs.on("ReplayBufferStateChanged" as any, (e: any) => {
+                        data.replayBufferActive = !!e.outputActive;
+                        ws.send(JSON.stringify({
+                            type: "status",
+                            connected: true,
+                            recording: data.recording,
+                            replayBufferActive: data.replayBufferActive,
                         }));
                     });
 
@@ -149,6 +174,34 @@ serve({
 
                 } catch (err) {
                     console.error("Failed to toggle:", err);
+                }
+            } else if (payload.action === "replay_toggle") {
+                if (!data.connected) return;
+                try {
+                    if (data.replayBufferActive) {
+                        data.replayBufferActive = false;
+                        data.obs.call("StopReplayBuffer").catch((err) => console.error("StopReplayBuffer failed:", err));
+                    } else {
+                        data.replayBufferActive = true;
+                        data.obs.call("StartReplayBuffer").catch((err) => console.error("StartReplayBuffer failed:", err));
+                    }
+
+                    ws.send(JSON.stringify({
+                        type: "status",
+                        connected: true,
+                        recording: data.recording,
+                        replayBufferActive: data.replayBufferActive,
+                    }));
+                } catch (err: any) {
+                    ws.send(JSON.stringify({ type: "error", message: err?.message || "Replay toggle failed" }));
+                }
+            } else if (payload.action === "replay_save") {
+                if (!data.connected) return;
+                try {
+                    await data.obs.call("SaveReplayBuffer");
+                    ws.send(JSON.stringify({ type: "toast", message: "Replay saved" }));
+                } catch (err: any) {
+                    ws.send(JSON.stringify({ type: "error", message: err?.message || "Replay save failed" }));
                 }
             } else if (payload.action === "benchmark") {
                 if (!data.connected) return;

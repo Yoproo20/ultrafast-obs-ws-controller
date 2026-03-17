@@ -1,0 +1,377 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>OBS Replay Buffer</title>
+    <style>
+        * {
+            box-sizing: border-box;
+            user-select: none;
+            -webkit-user-select: none;
+            -webkit-touch-callout: none;
+        }
+
+        body, html {
+            margin: 0;
+            padding: 0;
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            background-color: #000;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+        }
+
+        /* Settings Overlay (same pattern as main page) */
+        #settings {
+            position: fixed;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background: #222;
+            color: white;
+            z-index: 100;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            padding: 20px;
+        }
+        #settings.hidden { display: none; }
+        .form-group {
+            margin-bottom: 15px;
+            width: 100%;
+            max-width: 300px;
+        }
+        .form-group label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: bold;
+        }
+        .form-group input {
+            width: 100%;
+            padding: 12px;
+            font-size: 16px;
+            border: none;
+            border-radius: 4px;
+        }
+        #saveBtn {
+            padding: 15px;
+            width: 100%;
+            max-width: 300px;
+            background: #007bff;
+            color: white;
+            border: none;
+            font-size: 18px;
+            font-weight: bold;
+            border-radius: 4px;
+            margin-top: 10px;
+        }
+
+        #connectionStatus {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            color: #aaa;
+            font-size: 12px;
+            z-index: 10;
+        }
+
+        #topRightControls {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            left: 10px;
+            z-index: 10;
+            display: flex;
+            flex-wrap: wrap;
+            justify-content: flex-end;
+            gap: 10px;
+            pointer-events: none;
+        }
+        #topRightControls button {
+            pointer-events: auto;
+            border: none;
+            color: white;
+            padding: 8px 12px;
+            border-radius: 4px;
+            font-size: 13px;
+            font-weight: bold;
+            cursor: pointer;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.3);
+        }
+        #navRecordBtn { background: rgba(255,255,255,0.2); }
+        #clearSettingsBtn { background: rgba(255,255,255,0.2); }
+
+        /* Main Layout */
+        #root {
+            position: absolute;
+            inset: 0;
+            display: flex;
+            flex-direction: column;
+            padding: 56px 14px 14px 14px;
+            gap: 14px;
+        }
+
+        .bigBtn {
+            flex: 1;
+            width: 100%;
+            border: none;
+            border-radius: 14px;
+            font-size: 34px;
+            font-weight: 900;
+            text-transform: uppercase;
+            letter-spacing: 0.6px;
+            color: white;
+            background: #333;
+            transition: none; /* keep the "instant" feel */
+        }
+
+        .bigBtn:disabled {
+            opacity: 0.45;
+        }
+
+        /* Replay toggle states */
+        #replayToggleBtn.ready { background: #28a745; }
+        #replayToggleBtn.active { background: #dc3545; }
+
+        /* Save button */
+        #saveReplayBtn {
+            background: rgba(0, 123, 255, 0.9);
+        }
+
+        #hintBar {
+            position: absolute;
+            bottom: 14px;
+            left: 14px;
+            right: 14px;
+            background: rgba(0, 0, 0, 0.65);
+            color: #cfcfcf;
+            border-radius: 10px;
+            padding: 12px 14px;
+            font-size: 13px;
+            display: flex;
+            justify-content: space-between;
+            gap: 12px;
+            pointer-events: none;
+        }
+        #hintBar strong { color: #fff; }
+    </style>
+</head>
+<body>
+    <div id="settings">
+        <h2>OBS Connection</h2>
+        <div class="form-group">
+            <label>IP Address</label>
+            <input type="text" id="ipInput" placeholder="192.168.1.100" />
+        </div>
+        <div class="form-group">
+            <label>Port</label>
+            <input type="number" id="portInput" placeholder="4455" value="4455" />
+        </div>
+        <div class="form-group">
+            <label>Password</label>
+            <input type="password" id="passInput" placeholder="Leave blank if none" />
+        </div>
+        <button id="saveBtn">Connect</button>
+    </div>
+
+    <div id="connectionStatus">Disconnected</div>
+    <div id="topRightControls">
+        <button id="navRecordBtn">Record</button>
+        <button id="clearSettingsBtn">Clear Config</button>
+    </div>
+
+    <div id="root">
+        <button id="replayToggleBtn" class="bigBtn">
+            <span id="replayToggleText">CONNECTING</span>
+        </button>
+        <button id="saveReplayBtn" class="bigBtn" disabled>
+            <span id="saveReplayText">SAVE REPLAY</span>
+        </button>
+    </div>
+
+    <div id="hintBar">
+        <div><strong>Replay Buffer</strong> start/stop + save</div>
+        <div id="statusMini">Offline</div>
+    </div>
+
+    <script>
+        const settingsEl = document.getElementById('settings');
+        const connectionStatus = document.getElementById('connectionStatus');
+        const statusMini = document.getElementById('statusMini');
+
+        const replayToggleBtn = document.getElementById('replayToggleBtn');
+        const replayToggleText = document.getElementById('replayToggleText');
+        const saveReplayBtn = document.getElementById('saveReplayBtn');
+
+        let ws = null;
+        let isConnected = false;
+        let replayActive = false;
+
+        // Parse URL params for easy sharing setup (same as main)
+        const urlParams = new URLSearchParams(window.location.search);
+        if (urlParams.has('ip')) {
+            localStorage.setItem('obs_ip', urlParams.get('ip'));
+            localStorage.setItem('obs_port', urlParams.get('port') || '4455');
+            localStorage.setItem('obs_pass', urlParams.get('pass') || '');
+            window.history.replaceState({}, document.title, window.location.pathname);
+        }
+
+        // Navigation
+        document.getElementById('navRecordBtn').addEventListener('click', () => {
+            window.location.href = '/';
+        });
+
+        // Creds helpers (same keys as main)
+        function getCreds() {
+            const ip = localStorage.getItem('obs_ip');
+            const port = localStorage.getItem('obs_port');
+            const pass = localStorage.getItem('obs_pass');
+            if (ip && port) return { ip, port, pass: pass || '' };
+            return null;
+        }
+        function saveCreds(ip, port, pass) {
+            localStorage.setItem('obs_ip', ip);
+            localStorage.setItem('obs_port', port);
+            localStorage.setItem('obs_pass', pass);
+        }
+        function clearCreds() {
+            localStorage.removeItem('obs_ip');
+            localStorage.removeItem('obs_port');
+            localStorage.removeItem('obs_pass');
+            location.reload();
+        }
+        document.getElementById('clearSettingsBtn').addEventListener('click', clearCreds);
+
+        function setReplayUi() {
+            replayToggleBtn.className = 'bigBtn';
+
+            if (!isConnected) {
+                replayToggleText.innerText = 'OFFLINE';
+                statusMini.innerText = 'Offline';
+                saveReplayBtn.disabled = true;
+                return;
+            }
+
+            if (replayActive) {
+                replayToggleBtn.classList.add('active');
+                replayToggleText.innerText = 'REPLAY ON';
+                statusMini.innerText = 'Replay buffer: ON';
+                saveReplayBtn.disabled = false;
+            } else {
+                replayToggleBtn.classList.add('ready');
+                replayToggleText.innerText = 'REPLAY OFF';
+                statusMini.innerText = 'Replay buffer: OFF';
+                saveReplayBtn.disabled = true;
+            }
+        }
+
+        function connect() {
+            const creds = getCreds();
+            if (!creds) {
+                settingsEl.classList.remove('hidden');
+                return;
+            }
+            settingsEl.classList.add('hidden');
+            connectionStatus.innerText = 'Connecting to Relay...';
+
+            const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
+            const wsUrl = `${protocol}//${location.host}/ws`;
+            ws = new WebSocket(wsUrl);
+
+            ws.onopen = () => {
+                connectionStatus.innerText = 'Authenticating with OBS...';
+                ws.send(JSON.stringify({ action: 'connect', ...creds }));
+            };
+
+            ws.onmessage = (e) => {
+                const msg = JSON.parse(e.data);
+                if (msg.type === 'status') {
+                    isConnected = !!msg.connected;
+                    connectionStatus.innerText = isConnected ? 'Connected' : 'OBS Disconnected';
+                    if (typeof msg.replayBufferActive === 'boolean') {
+                        replayActive = msg.replayBufferActive;
+                    }
+                    setReplayUi();
+                } else if (msg.type === 'toast') {
+                    // tiny, non-blocking confirmation
+                    statusMini.innerText = msg.message || 'OK';
+                    setTimeout(setReplayUi, 900);
+                } else if (msg.type === 'error') {
+                    connectionStatus.innerText = 'Error: ' + msg.message;
+                    statusMini.innerText = 'Error';
+                    if ((msg.message || '').includes('Authentication Failed')) {
+                        clearCreds();
+                    }
+                }
+            };
+
+            ws.onclose = () => {
+                isConnected = false;
+                replayActive = false;
+                connectionStatus.innerText = 'Relay Disconnected';
+                setReplayUi();
+                ws = null;
+                setTimeout(connect, 500);
+            };
+
+            ws.onerror = () => {
+                if (ws) ws.close();
+            };
+        }
+
+        document.getElementById('saveBtn').addEventListener('click', () => {
+            const ip = document.getElementById('ipInput').value.trim();
+            const port = document.getElementById('portInput').value.trim();
+            const pass = document.getElementById('passInput').value;
+            if (ip && port) {
+                saveCreds(ip, port, pass);
+                connect();
+            }
+        });
+
+        // Instant-ish buttons
+        function instantReplayToggle() {
+            if (!isConnected || !ws) return;
+            replayActive = !replayActive; // optimistic
+            setReplayUi();
+            ws.send(JSON.stringify({ action: 'replay_toggle' }));
+        }
+        function instantReplaySave() {
+            if (!isConnected || !ws || saveReplayBtn.disabled) return;
+            ws.send(JSON.stringify({ action: 'replay_save' }));
+        }
+
+        replayToggleBtn.addEventListener('touchstart', (e) => {
+            e.preventDefault();
+            instantReplayToggle();
+        }, { passive: false });
+        replayToggleBtn.addEventListener('mousedown', (e) => {
+            if (e.pointerType === 'touch') return;
+            e.preventDefault();
+            instantReplayToggle();
+        });
+
+        saveReplayBtn.addEventListener('touchstart', (e) => {
+            e.preventDefault();
+            instantReplaySave();
+        }, { passive: false });
+        saveReplayBtn.addEventListener('mousedown', (e) => {
+            if (e.pointerType === 'touch') return;
+            e.preventDefault();
+            instantReplaySave();
+        });
+
+        // Prefill settings
+        const saved = getCreds();
+        if (saved) {
+            document.getElementById('ipInput').value = saved.ip;
+            document.getElementById('portInput').value = saved.port;
+            document.getElementById('passInput').value = saved.pass;
+        }
+
+        setReplayUi();
+        connect();
+    </script>
+</body>
+</html>
+
