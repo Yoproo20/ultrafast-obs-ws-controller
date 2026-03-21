@@ -206,6 +206,7 @@
         let ws = null;
         let isConnected = false;
         let replayActive = false;
+        let saveCooldown = false;
 
         // Parse URL params for easy sharing setup (same as main)
         const urlParams = new URLSearchParams(window.location.search);
@@ -337,8 +338,14 @@
             ws.send(JSON.stringify({ action: 'replay_toggle' }));
         }
         function instantReplaySave() {
-            if (!isConnected || !ws || saveReplayBtn.disabled) return;
+            if (!isConnected || !ws || saveReplayBtn.disabled || saveCooldown) return;
+            saveCooldown = true;
+            saveReplayBtn.disabled = true;
             ws.send(JSON.stringify({ action: 'replay_save' }));
+            setTimeout(() => {
+                saveCooldown = false;
+                if (replayActive && isConnected) saveReplayBtn.disabled = false;
+            }, 2200);
         }
 
         replayToggleBtn.addEventListener('touchstart', (e) => {
